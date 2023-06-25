@@ -1,6 +1,9 @@
 import os
 import sqlite3
 import json
+import time
+
+import requests
 
 
 class Base:
@@ -23,8 +26,9 @@ class Base:
             temp = float(temp)
             hum = float(hum)
 
-            if temp == temp and hum == hum:  # temp and hum is not nan
+            if temp == temp and hum == hum:  # temp and hum is not nan, lol wtf?
                 self.__execute(sql, (temp, hum))
+                self.__send_to_graphite(temp, hum)
                 return True
         except:
             pass
@@ -38,6 +42,20 @@ class Base:
               "from measurements where " \
               "cast(strftime('%d', date, '+3 hour') as integer) = cast(strftime('%d', 'now', '+3 hour') as integer)"
 
+        for line in self.__execute(sql, fetch=True):
+            resp["temp"].append(line[0])
+            resp["hum"].append(line[1])
+            resp["labels"].append(line[2])
+            resp["lastUpdate"] = line[3]
+
+        return json.dumps(resp, indent=2)
+
+    def getDataByDate(self, date):
+        resp = {"labels": [], "temp": [], "hum": []}
+        sql = "select temp, hum, strftime('%H:%M', date)," \
+              "strftime('%d.%m.%Y', date) " \
+              "from measurements where " \
+              f"'{date}' = strftime('%Y-%m-%d', date)"
         for line in self.__execute(sql, fetch=True):
             resp["temp"].append(line[0])
             resp["hum"].append(line[1])
@@ -66,3 +84,33 @@ class Base:
 
             open(self.BASE_PATH, 'w').close()
             self.__execute(self.TABLE_STRUCTURE)
+
+    def __send_to_graphite(self, temp, hum):
+        url = "https://graphite-prod-24-prod-eu-west-2.grafana.net/graphite/metrics"
+
+        payload = json.dumps([
+            {
+                "name": "measurements.temperature",
+                "interval": 60,
+                "value": temp,
+                "time": time.time()
+            },
+            {
+                "name": "measurements.hum",
+                "interval": 60,
+                "value": hum,
+                "time": time.time()
+            }
+        ])
+
+        if 'WIFI-TEMP' not in os.environ:
+            return
+
+        auth = os.environ['WIFI-TEMP']
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f"Basic {auth}",
+        }
+
+        requests.request("POST", url, headers=headers, data=payload)
