@@ -93,13 +93,13 @@ class Base:
                 "name": "measurements.temperature",
                 "interval": 60,
                 "value": temp,
-                "time": time.time()
+                "time": int(time.time())
             },
             {
                 "name": "measurements.hum",
                 "interval": 60,
                 "value": hum,
-                "time": time.time()
+                "time": int(time.time())
             }
         ])
 
